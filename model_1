@@ -1,0 +1,95 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification, pipeline
+from transformers import AdamW
+from transformers import Trainer, TrainingArguments
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+
+class JpSentiDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+
+
+def compute_metrics(pred):
+    labels = pred.label_ids
+    preds = pred.predictions.argmax(-1)
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='weighted', zero_division=0)
+    acc = accuracy_score(labels, preds)
+    return {
+        'accuracy': acc,
+        'f1': f1,
+        'precision': precision,
+        'recall': recall
+    }
+
+
+if __name__ == '__main__':
+    df = pd.read_csv("../data/5638sents.tsv", sep='\t', header=None,
+                     names=["id", "text1", "text2", "label", "usage"])
+    df["text"] = df["text1"] + "[SEP]" + df["text2"]
+
+    df_train = df[(df["usage"] == "train") | (df["usage"] == "dev")]
+    train_docs1 = df_train["text1"].tolist()
+    train_docs2 = df_train["text2"].tolist()
+    train_labels = df_train["label"].tolist()
+
+    df_test = df[df["usage"] == "test"]
+    test_docs1 = df_test["text1"].tolist()
+    test_docs2 = df_test["text2"].tolist()
+    test_labels = df_test["label"].tolist()
+
+    # device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = "cpu"
+    print(device)
+
+    model_name = "cl-tohoku/bert-large-japanese"
+    # model_name = "cl-tohoku/bert-base-japanese-v2"
+
+    model = BertForSequenceClassification.from_pretrained(model_name, num_labels=2)
+    model = model.to(device)
+    tokenizer = BertTokenizer.from_pretrained(model_name)
+
+    train_encodings = tokenizer(train_docs1, train_docs2, return_tensors='pt', padding=True, truncation=True, max_length=128).to(device)
+    test_encodings = tokenizer(test_docs1, test_docs2, return_tensors='pt', padding=True, truncation=True, max_length=128).to(device)
+
+    train_dataset = JpSentiDataset(train_encodings, train_labels)
+    test_dataset = JpSentiDataset(test_encodings, test_labels)
+
+    training_args = TrainingArguments(
+        output_dir='./results',  # output directory
+        num_train_epochs=1,  # total number of training epochs
+        per_device_train_batch_size=16,  # batch size per device during training
+        per_device_eval_batch_size=64,  # batch size for evaluation
+        warmup_steps=500,  # number of warmup steps for learning rate scheduler
+        weight_decay=0.01,  # strength of weight decay
+        save_total_limit=1,  # limit the total amount of checkpoints. Deletes the older checkpoints.
+        dataloader_pin_memory=False,  # Whether you want to pin memory in data loaders or not. Will default to True
+        # evaluation_strategy="epoch",     # Evaluation is done at the end of each epoch.
+        evaluation_strategy="steps",
+        logging_steps=50,
+        logging_dir='./logs'
+    )
+
+    trainer = Trainer(
+        model=model,  # the instantiated 🤗 Transformers model to be trained
+        args=training_args,  # training arguments, defined above
+        train_dataset=train_dataset,  # training dataset
+        eval_dataset=test_dataset,  # evaluation dataset
+        compute_metrics=compute_metrics  # The function that will be used to compute metrics at evaluation
+    )
+
+    trainer.train()
+
+    # evaluation のみ実行
+    trainer.evaluate(eval_dataset=test_dataset)
