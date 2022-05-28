@@ -1,0 +1,33 @@
+import requests
+
+def deepL_trans_to_ja(text):
+  YOUR_API_KEY = '7cd023b8-7075-cc85-6abc-826b23bfc2a3'
+
+  # URLクエリに仕込むパラメータの辞書を作っておく
+  params = {
+              "auth_key": YOUR_API_KEY,
+              "text": text,
+              "source_lang": 'EN', # 入力テキストの言語を英語に設定
+              "target_lang": 'JA'  # 出力テキストの言語を日本語に設定
+          }
+  # パラメータと一緒にPOSTする
+  request = requests.post("https://api.deepl.com/v2/translate", data=params)
+
+  result = request.json()
+  return result["translations"][0]["text"]
+
+
+# count = 0
+result = []
+with open("fanyi1.txt", "r", encoding='utf-8') as f:
+    for line in f:
+        en_text = deepL_trans_to_ja(line)
+        result.append(en_text)
+        # count += 1
+        # if count == 2:
+        #     break
+
+
+with open("fanyi_result1.txt", "w", encoding='utf-8') as f:
+    for i in range(len(result)):
+        f.write(result[i])
