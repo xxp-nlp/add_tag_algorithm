@@ -1,0 +1,49 @@
+import torch
+import numpy as np
+from transformers import BertTokenizer, BertForSequenceClassification, pipeline
+
+model_name = "../step2/hard_sents_5e-7_32_epoch10"
+# model_name = "cl-tohoku/bert-large-japanese"
+
+model = BertForSequenceClassification.from_pretrained(model_name)
+model.eval()
+tokenizer = BertTokenizer.from_pretrained(model_name)
+
+def getRes(num1,num2):
+    if num1 > num2:
+        return 0
+    else:
+        return 1
+
+results_str = []
+
+with open("../data/dev_FIT.tsv", "r", encoding='utf-8') as f:
+    for line in f:
+        fields = line.strip().split("\t")
+        if len(fields) == 1:
+            continue
+        text = fields[1] + "[SEP]" + fields[2] + "[SEP]" + fields[3]
+        # print(text)
+        test_encodings = tokenizer(text, return_tensors='pt')
+        input_ids = test_encodings['input_ids']
+        # print(input_ids[0])
+        # wakati = tokenizer.convert_ids_to_tokens(input_ids[0])
+        # print(wakati)
+        # token_type_ids = test_encodings['token_type_ids']
+        # print(token_type_ids[0])
+        outputs = model(input_ids)
+        logits = outputs.logits
+        result = torch.softmax(logits, dim=1)
+        pre0 = logits.tolist()[0][0]
+        pre1 = logits.tolist()[0][1]
+        result_1 = getRes(result.tolist()[0][0], result.tolist()[0][1])
+        result_str = fields[0] + "\t" + fields[1] + "\t" + fields[2] + "\t" + fields[3] + "\t" + fields[4] + "\t" + fields[5] + "\t" + fields[6] + "\t" + str(pre0) + "\t" + str(pre1) + "\t" + str(result_1) + "\t" + str(result.tolist()[0][0]) + "\t" + str(result.tolist()[0][1])
+        # print(result_str)
+        results_str.append(result_str)
+
+with open("../step2/hard_sents_5e-6_32_epoch10/dev_result/5e-6_32_ckp5_result.tsv", "w", encoding='utf-8') as f:
+    for i in range(len(results_str)):
+        f.write(results_str[i])
+        f.write("\n")
+
+
